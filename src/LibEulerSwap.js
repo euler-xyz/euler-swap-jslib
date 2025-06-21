@@ -1,8 +1,7 @@
 import { parseUnits, getAddress, parseAbi, encodeAbiParameters, encodePacked, keccak256, fromHex, toHex } from 'viem';
 import { generatePrivateKey } from 'viem/accounts';
 
-import evcAbi from '../abis/EthereumVaultConnector.json';
-import iEulerSwapAbi from '../abis/IEulerSwap.json';
+import iEulerSwapAbi from './IEulerSwap.json';
 
 const c1e18 = 10n**18n;
 const paramsAbi = iEulerSwapAbi.abi.find(item => item.name === 'getParams').outputs;
