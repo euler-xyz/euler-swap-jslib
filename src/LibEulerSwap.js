@@ -7,6 +7,8 @@ const c1e18 = 10n**18n;
 const paramsAbi = iEulerSwapAbi.abi.find(item => item.name === 'getParams').outputs;
 
 
+//// Pool Creation
+
 export async function genAddress(readClient, eulerSwapFactory, params) {
     let mask = BigInt(2**14 - 1);
     let requiredHooks = 10408n;
@@ -46,6 +48,117 @@ export async function creationCode(readClient, eulerSwapFactory, params) {
 
 
 
+
+//// Pricing Helpers
+
+export function getCurrentPrice(params, reserve0, reserve1) {
+    if (reserve0 <= params.equilibriumReserve0) {
+        if (reserve0 === params.equilibriumReserve0) return params.priceX * c1e18 / params.priceY;
+        return -df_dx(reserve0, params.priceX, params.priceY, params.equilibriumReserve0, params.concentrationX);
+    } else {
+        if (reserve1 === params.equilibriumReserve1) return params.priceY * c1e18 / params.priceX;
+        return -df_dx(reserve1, params.priceY, params.priceX, params.equilibriumReserve1, params.concentrationY);
+    }
+}
+
+export function verifyPoint(params, reserve0, reserve1) {
+    return verify(
+        reserve0,
+        reserve1,
+        params.priceX,
+        params.priceY,
+        params.equilibriumReserve0,
+        params.equilibriumReserve1,
+        params.concentrationX,
+        params.concentrationY
+    );
+}
+
+export function verifyOnCurveExact(params, x, y) {
+    let v1 = verifyPoint(params, x, y);
+    let v2 = x === 0n || !verifyPoint(params, x - 1n, y);
+    let v3 = y === 0n || !verifyPoint(params, x, y - 1n);
+
+    return (v1 && v2 && v3);
+}
+
+export function tightenToCurve(params, x, y) {
+    if (!verifyPoint(params, x, y)) throw Error('not on or above curve');
+    if (verifyOnCurveExact(params, x, y)) return [x, y];
+
+    let tighten = (dim) => {
+        let val = 1n;
+
+        // Phase 1: Keep doubling skim amount until it fails
+
+        while (true) {
+            let [tx, ty] = dim ? [x - val, y] : [x, y - val];
+
+            if (verifyPoint(params, tx, ty)) {
+                [x, y] = [tx, ty];
+                val *= 2n;
+            } else {
+                break;
+            }
+        }
+
+        // Phase 2: Keep halving skim amount until 1 wei skim fails
+
+        while (true) {
+            if (val > 1n) val /= 2n;
+
+            let [tx, ty] = dim ? [x - val, y] : [x, y - val];
+
+            if (verifyPoint(params, tx, ty)) {
+                [x, y] = [tx, ty];
+            } else {
+                if (val === 1n) break;
+            }
+        }
+    };
+
+    tighten(true);
+    tighten(false);
+
+    return [x, y];
+}
+
+export function computePriceFraction(price, decimals0, decimals1) {
+    let price18scale;
+    let inverted = false;
+
+    try {
+        price = parseFloat(price);
+        if (isNaN(price) || !price) throw Error('not a valid price');
+        if (price < 1) {
+            inverted = true;
+            price = 1 / price;
+        }
+        price18scale = parseUnits(price.toString(), 18);
+    } catch (e) {
+        return [undefined, undefined];
+    }
+
+    let output = [
+        10n**(BigInt(decimals1)),
+        10n**(BigInt(decimals0)),
+    ];
+
+    if (!inverted) {
+        output[0] = output[0] * price18scale / c1e18;
+    } else {
+        output[1] = output[1] * price18scale / c1e18;
+    }
+
+    return output;
+}
+
+
+
+
+
+
+// Curve Math
 
 export function f(x, px, py, x0, y0, c) {
     let v = (px * (x0 - x)) * (c * x + (c1e18 - c) * x0);
@@ -150,110 +263,4 @@ export function fInverse(y, px, py, x0, y0, cx) {
     }
 
     return x;
-}
-
-
-
-
-
-export function getCurrentPrice(params, reserve0, reserve1) {
-    if (reserve0 <= params.equilibriumReserve0) {
-        if (reserve0 === params.equilibriumReserve0) return params.priceX * c1e18 / params.priceY;
-        return -df_dx(reserve0, params.priceX, params.priceY, params.equilibriumReserve0, params.concentrationX);
-    } else {
-        if (reserve1 === params.equilibriumReserve1) return params.priceY * c1e18 / params.priceX;
-        return -df_dx(reserve1, params.priceY, params.priceX, params.equilibriumReserve1, params.concentrationY);
-    }
-}
-
-export function verifyPoint(params, reserve0, reserve1) {
-    return verify(
-        reserve0,
-        reserve1,
-        params.priceX,
-        params.priceY,
-        params.equilibriumReserve0,
-        params.equilibriumReserve1,
-        params.concentrationX,
-        params.concentrationY
-    );
-}
-
-export function verifyOnCurveExact(params, x, y) {
-    let v1 = verifyPoint(params, x, y);
-    let v2 = x === 0n || !verifyPoint(params, x - 1n, y);
-    let v3 = y === 0n || !verifyPoint(params, x, y - 1n);
-
-    return (v1 && v2 && v3);
-}
-
-export function tightenToCurve(params, x, y) {
-    if (!verifyPoint(params, x, y)) throw Error('not on or above curve');
-    if (verifyOnCurveExact(params, x, y)) return [x, y];
-
-    let tighten = (dim) => {
-        let val = 1n;
-
-        // Phase 1: Keep doubling skim amount until it fails
-
-        while (true) {
-            let [tx, ty] = dim ? [x - val, y] : [x, y - val];
-
-            if (verifyPoint(params, tx, ty)) {
-                [x, y] = [tx, ty];
-                val *= 2n;
-            } else {
-                break;
-            }
-        }
-
-        // Phase 2: Keep halving skim amount until 1 wei skim fails
-
-        while (true) {
-            if (val > 1n) val /= 2n;
-
-            let [tx, ty] = dim ? [x - val, y] : [x, y - val];
-
-            if (verifyPoint(params, tx, ty)) {
-                [x, y] = [tx, ty];
-            } else {
-                if (val === 1n) break;
-            }
-        }
-    };
-
-    tighten(true);
-    tighten(false);
-
-    return [x, y];
-}
-
-export function computePriceFraction(price, decimals0, decimals1) {
-    let price18scale;
-    let inverted = false;
-
-    try {
-        price = parseFloat(price);
-        if (isNaN(price) || !price) throw Error('not a valid price');
-        if (price < 1) {
-            inverted = true;
-            price = 1 / price;
-        }
-        price18scale = parseUnits(price.toString(), 18);
-    } catch (e) {
-        return [undefined, undefined];
-    }
-
-    let output = [
-        10n**(BigInt(decimals1)),
-        10n**(BigInt(decimals0)),
-    ];
-
-    if (!inverted) {
-        output[0] = output[0] * price18scale / c1e18;
-    } else {
-        output[1] = output[1] * price18scale / c1e18;
-    }
-
-    return output;
 }
