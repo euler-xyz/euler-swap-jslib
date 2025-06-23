@@ -52,13 +52,18 @@ export async function creationCode(readClient, eulerSwapFactory, params) {
 //// Pricing Helpers
 
 export function getCurrentPrice(params, reserve0, reserve1) {
+    let price;
+
     if (reserve0 <= params.equilibriumReserve0) {
         if (reserve0 === params.equilibriumReserve0) return params.priceX * c1e18 / params.priceY;
-        return -df_dx(reserve0, params.priceX, params.priceY, params.equilibriumReserve0, params.concentrationX);
+        price = -df_dx(reserve0, params.priceX, params.priceY, params.equilibriumReserve0, params.concentrationX);
     } else {
         if (reserve1 === params.equilibriumReserve1) return params.priceY * c1e18 / params.priceX;
-        return -df_dx(reserve1, params.priceY, params.priceX, params.equilibriumReserve1, params.concentrationY);
+        price = -df_dx(reserve1, params.priceY, params.priceX, params.equilibriumReserve1, params.concentrationY);
+        price = c1e18 * c1e18 / price;
     }
+
+    return price;
 }
 
 export function verifyPoint(params, reserve0, reserve1) {
