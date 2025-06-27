@@ -203,7 +203,7 @@ function computeScale(x) {
     return 1n;
 }
 
-function bigintSqrt(x) {
+function sqrtCeil(x) {
     if (x < 0n) {
         throw new Error("Square root of negative number");
     }
@@ -219,17 +219,8 @@ function bigintSqrt(x) {
         return newtonIteration(n, x1);
     }
 
-    return newtonIteration(x, 1n << (BigInt(x.toString(2).length) >> 1n));
-}
-
-function bigintCeil(x) {
-    if (x >= 0n) {
-        return x;
-    }
-    const absX = x >= 0n ? x : -x;
-    const quotient = absX / c1e18;
-    const remainder = absX % c1e18;
-    return remainder === 0n ? quotient : quotient + 1n;
+    const r = newtonIteration(x, 1n << (BigInt(x.toString(2).length) >> 1n));
+    return r * r < x ? r + 1n : r;
 }
 
 export function fInverse(y, px, py, x0, y0, cx) {
@@ -247,12 +238,12 @@ export function fInverse(y, px, py, x0, y0, cx) {
     if (absB < 10n ** 36n) {
         squaredB = absB * absB;
         discriminant = squaredB + fourAC;
-        sqrt = bigintSqrt(discriminant);
+        sqrt = sqrtCeil(discriminant);
     } else {
         const scale = computeScale(absB);
         squaredB = mulDivCeil(absB / scale, absB, scale);
         discriminant = squaredB + fourAC / (scale * scale);
-        sqrt = bigintSqrt(discriminant);
+        sqrt = sqrtCeil(discriminant);
         sqrt = sqrt * scale;
     }
 
@@ -260,7 +251,7 @@ export function fInverse(y, px, py, x0, y0, cx) {
     if (B <= 0n) {
         x = mulDivCeil((absB + sqrt), c1e18, 2n * cx) + 1n;
     } else {
-        x = bigintCeil((2n * C) / (absB + sqrt)) + 1n;
+        x = ceilDiv((2n * C), (absB + sqrt)) + 1n;
     }
 
     if (x >= x0) {
@@ -272,4 +263,8 @@ export function fInverse(y, px, py, x0, y0, cx) {
 
 function mulDivCeil(x, y, denominator) {
     return (x * y + denominator - 1n) / denominator;
+}
+
+function ceilDiv(x, y) {
+    return (x + y - 1n) / y;
 }
