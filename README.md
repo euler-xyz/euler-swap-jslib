@@ -44,6 +44,18 @@ This function is used internally by `genAddress` but is exposed in case it is us
 
 Given a curve point indicated by two reserve values, returns the marginal price on the curve at this point. The price is returned as a `10**18` scaled fraction.
 
+### `getCurrentPriceRAY(params, reserve0, reserve1)`
+
+Given a curve point indicated by two reserve values, returns the marginal price on the curve at this point. The price is returned as a `10**27` scaled fraction.
+
+### `getCurrentReserves(params, currentPrice)`
+
+Given a marginal price for a point on the curve, returns the two reserves of that point. The price input is a `10**18` scaled fraction.
+
+### `getCurrentReservesRAY(params, currentPriceRAY)`
+
+Given a marginal price for a point on the curve, returns the two reserves of that point. The price input is a `10**27` scaled fraction.
+
 ### `verifyPoint(params, reserve0, reserve1)`
 
 Returns true if the point is on or above the curve specified by `params`. If true, it means that the EulerSwap contract would accept this point as a valid point after a swap.
@@ -83,6 +95,10 @@ Verifies that point `(x, y)` is on or above the curve.
 ### `df_dx(x, px, py, x0, cx)`
 
 The derivative of `f()`. Useful for computing the marginal price at given curve points.
+
+### `df_dx_RAY(x, px, py, x0, cx)`
+
+The derivative of `f()`. Useful for computing the marginal price at given curve points. The output is a `10**27` scaled fraction.
 
 ### `fInverse(y, px, py, x0, y0, cx)`
 
