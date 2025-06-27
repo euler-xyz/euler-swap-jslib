@@ -158,8 +158,8 @@ export function getCurrentReservesRAY(params, currentPriceRAY) {
     if (currentPriceRAY === apexPriceRAY) return [x0, y0];
 
     const searchLeft = () => {
-        let lo = 1n,
-            hi = x0;
+        let lo = 1n;
+        let hi = x0;
         while (lo <= hi) {
             const mid = (lo + hi) >> 1n;
             const y = f(mid, px, py, x0, y0, cx);
@@ -172,8 +172,8 @@ export function getCurrentReservesRAY(params, currentPriceRAY) {
     };
 
     const searchRight = () => {
-        let lo = y0,
-            hi = y0;
+        let lo = y0;
+        let hi = y0;
         while (true) {
             const xAtHi = f(hi, py, px, y0, x0, cy);
             const p = getCurrentPriceRAY(params, xAtHi, hi);
