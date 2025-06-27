@@ -4,6 +4,8 @@ import { generatePrivateKey } from 'viem/accounts';
 import iEulerSwapAbi from './IEulerSwap.json';
 
 const c1e18 = 10n**18n;
+const c1e27 = 10n ** 27n;
+const c1e9 = 10n ** 9n;
 const paramsAbi = iEulerSwapAbi.abi.find(item => item.name === 'getParams').outputs;
 
 
@@ -64,6 +66,136 @@ export function getCurrentPrice(params, reserve0, reserve1) {
     }
 
     return price;
+}
+
+export function getCurrentPriceRAY(params, reserve0, reserve1) {
+    let price;
+
+    if (reserve0 <= params.equilibriumReserve0) {
+        if (reserve0 === params.equilibriumReserve0) return (params.priceX * c1e27) / params.priceY;
+        price = -df_dx_RAY(reserve0, params.priceX, params.priceY, params.equilibriumReserve0, params.concentrationX);
+    } else {
+        if (reserve1 === params.equilibriumReserve1) return (params.priceY * c1e27) / params.priceX;
+        price = -df_dx_RAY(reserve1, params.priceY, params.priceX, params.equilibriumReserve1, params.concentrationY);
+        price = (c1e27 * c1e27) / price;
+    }
+    return price;
+}
+
+export function getCurrentReserves(params, currentPrice) {
+    const {
+        priceX: px,
+        priceY: py,
+        equilibriumReserve0: x0,
+        equilibriumReserve1: y0,
+        concentrationX: cx,
+        concentrationY: cy,
+    } = params;
+
+    const apexPrice = (px * c1e18) / py;
+    if (currentPrice < apexPrice) throw new Error('price is below apex - no curve solution');
+    if (currentPrice === apexPrice) return [x0, y0];
+
+    const searchLeft = () => {
+        let lo = 1n;
+        let hi = x0;
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1n;
+            const y = f(mid, px, py, x0, y0, cx);
+            const p = getCurrentPrice(params, mid, y);
+            if (p === currentPrice) return [mid, y];
+            if (p > currentPrice) {
+                lo = mid + 1n;
+            } else {
+                hi = mid - 1n;
+            }
+        }
+        return undefined;
+    };
+
+    const searchRight = () => {
+        let lo = y0;
+        let hi = y0;
+        while (true) {
+            const xAtHi = f(hi, py, px, y0, x0, cy);
+            const p = getCurrentPrice(params, xAtHi, hi);
+            if (p >= currentPrice) break;
+            hi <<= 1n;
+        }
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1n;
+            const x = f(mid, py, px, y0, x0, cy);
+            const p = getCurrentPrice(params, x, mid);
+            if (p === currentPrice) return [x, mid];
+            if (p < currentPrice) {
+                lo = mid + 1n;
+            } else {
+                hi = mid - 1n;
+            }
+        }
+        return undefined;
+    };
+
+    const left = searchLeft();
+    if (left) return left;
+    const right = searchRight();
+    if (right) return right;
+    throw new Error('no integer reserves produce the supplied price');
+}
+
+export function getCurrentReservesRAY(params, currentPriceRAY) {
+    const {
+        priceX: px,
+        priceY: py,
+        equilibriumReserve0: x0,
+        equilibriumReserve1: y0,
+        concentrationX: cx,
+        concentrationY: cy,
+    } = params;
+
+    const apexPriceRAY = (px * c1e27) / py;
+    if (currentPriceRAY < apexPriceRAY) throw new Error('price below apex - no curve solution');
+    if (currentPriceRAY === apexPriceRAY) return [x0, y0];
+
+    const searchLeft = () => {
+        let lo = 1n;
+        let hi = x0;
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1n;
+            const y = f(mid, px, py, x0, y0, cx);
+            const p = getCurrentPriceRAY(params, mid, y);
+            if (p === currentPriceRAY) return [mid, y];
+            if (p > currentPriceRAY) lo = mid + 1n;
+            else hi = mid - 1n;
+        }
+        return undefined;
+    };
+
+    const searchRight = () => {
+        let lo = y0;
+        let hi = y0;
+        while (true) {
+            const xAtHi = f(hi, py, px, y0, x0, cy);
+            const p = getCurrentPriceRAY(params, xAtHi, hi);
+            if (p >= currentPriceRAY) break;
+            hi <<= 1n;
+        }
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1n;
+            const x = f(mid, py, px, y0, x0, cy);
+            const p = getCurrentPriceRAY(params, x, mid);
+            if (p === currentPriceRAY) return [x, mid];
+            if (p < currentPriceRAY) lo = mid + 1n;
+            else hi = mid - 1n;
+        }
+        return undefined;
+    };
+
+    const left = searchLeft();
+    if (left) return left;
+    const right = searchRight();
+    if (right) return right;
+    throw new Error('no integer reserves produce the supplied RAY price');
 }
 
 export function verifyPoint(params, reserve0, reserve1) {
@@ -185,6 +317,11 @@ export function verify(x, y, px, py, x0, y0, cx, cy) {
 export function df_dx(x, px, py, x0, cx) {
     const r = (((x0 * x0) / x) * c1e18) / x;
     return (-px * (cx + ((c1e18 - cx) * r) / c1e18)) / py;
+}
+
+export function df_dx_RAY(x, px, py, x0, cx) {
+    const r = (((x0 * x0) / x) * c1e18) / x;
+    return (-px * c1e9 * (cx + ((c1e18 - cx) * r) / c1e18)) / py;
 }
 
 function computeScale(x) {
