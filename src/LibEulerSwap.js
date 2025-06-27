@@ -233,7 +233,7 @@ function bigintCeil(x) {
 }
 
 export function fInverse(y, px, py, x0, y0, cx) {
-    const term1 = (((py * c1e18 * (y - y0)) / px) * c1e18) / px;
+    const term1 = (py * c1e18 * (y - y0)) / px;
     const term2 = (2n * cx - c1e18) * x0;
     const B = (term1 - term2) / c1e18;
     const C = ((c1e18 - cx) * x0 * x0) / c1e18;
@@ -258,7 +258,7 @@ export function fInverse(y, px, py, x0, y0, cx) {
 
     let x = 0n;
     if (B <= 0n) {
-        x = (absB + sqrt) / 2n + 1n;
+        x = ((absB + sqrt) * 10n ** 18n) / (2n * cx) + 1n;
     } else {
         x = bigintCeil((2n * C) / (absB + sqrt)) + 1n;
     }
