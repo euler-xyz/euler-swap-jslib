@@ -340,7 +340,7 @@ function computeScale(x) {
     return 1n;
 }
 
-function bigintSqrt(x) {
+function sqrtCeil(x) {
     if (x < 0n) {
         throw new Error("Square root of negative number");
     }
@@ -356,25 +356,16 @@ function bigintSqrt(x) {
         return newtonIteration(n, x1);
     }
 
-    return newtonIteration(x, 1n << (BigInt(x.toString(2).length) >> 1n));
-}
-
-function bigintCeil(x) {
-    if (x >= 0n) {
-        return x;
-    }
-    const absX = x >= 0n ? x : -x;
-    const quotient = absX / c1e18;
-    const remainder = absX % c1e18;
-    return remainder === 0n ? quotient : quotient + 1n;
+    const r = newtonIteration(x, 1n << (BigInt(x.toString(2).length) >> 1n));
+    return r * r < x ? r + 1n : r;
 }
 
 export function fInverse(y, px, py, x0, y0, cx) {
-    const term1 = (((py * c1e18 * (y - y0)) / px) * c1e18) / px;
+    const term1 = mulDivCeil(py * c1e18, y - y0, px);
     const term2 = (2n * cx - c1e18) * x0;
     const B = (term1 - term2) / c1e18;
-    const C = ((c1e18 - cx) * x0 * x0) / c1e18;
-    const fourAC = (4n * cx * C) / c1e18;
+    const C = mulDivCeil((c1e18 - cx), x0 * x0, c1e18);
+    const fourAC = mulDivCeil(4n * cx, C, c1e18);
 
     const absB = B >= 0n ? B : -B;
 
@@ -384,20 +375,20 @@ export function fInverse(y, px, py, x0, y0, cx) {
     if (absB < 10n ** 36n) {
         squaredB = absB * absB;
         discriminant = squaredB + fourAC;
-        sqrt = bigintSqrt(discriminant);
+        sqrt = sqrtCeil(discriminant);
     } else {
         const scale = computeScale(absB);
-        squaredB = ((absB / scale) * absB) / scale;
+        squaredB = mulDivCeil(absB / scale, absB, scale);
         discriminant = squaredB + fourAC / (scale * scale);
-        sqrt = bigintSqrt(discriminant);
+        sqrt = sqrtCeil(discriminant);
         sqrt = sqrt * scale;
     }
 
     let x = 0n;
     if (B <= 0n) {
-        x = (absB + sqrt) / 2n + 1n;
+        x = mulDivCeil((absB + sqrt), c1e18, 2n * cx) + 1n;
     } else {
-        x = bigintCeil((2n * C) / (absB + sqrt)) + 1n;
+        x = ceilDiv((2n * C), (absB + sqrt)) + 1n;
     }
 
     if (x >= x0) {
@@ -405,4 +396,12 @@ export function fInverse(y, px, py, x0, y0, cx) {
     }
 
     return x;
+}
+
+function mulDivCeil(x, y, denominator) {
+    return (x * y + denominator - 1n) / denominator;
+}
+
+function ceilDiv(x, y) {
+    return (x + y - 1n) / y;
 }
