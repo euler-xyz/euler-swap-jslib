@@ -6,17 +6,18 @@ import iEulerSwapAbi from './IEulerSwap.json';
 const c1e18 = 10n**18n;
 const c1e27 = 10n ** 27n;
 const c1e9 = 10n ** 9n;
-const paramsAbi = iEulerSwapAbi.abi.find(item => item.name === 'getParams').outputs;
+const staticParamsAbi = iEulerSwapAbi.abi.find(item => item.name === 'getStaticParams').outputs;
+const dynamicParamsAbi = iEulerSwapAbi.abi.find(item => item.name === 'getDynamicParams').outputs;
 
 
 //// Pool Creation
 
-export async function genAddress(readClient, eulerSwapFactory, params) {
+export async function genAddress(readClient, eulerSwapFactory, sParams) {
     let mask = BigInt(2**14 - 1);
     let requiredHooks = 10408n;
 
     let salt = fromHex(generatePrivateKey(), 'bigint');
-    let creationCodeHash = keccak256(await creationCode(readClient, eulerSwapFactory, params));
+    let creationCodeHash = keccak256(await creationCode(readClient, eulerSwapFactory, sParams));
 
     while (true) {
         salt++;
@@ -31,7 +32,7 @@ export async function genAddress(readClient, eulerSwapFactory, params) {
     }
 }
 
-export async function creationCode(readClient, eulerSwapFactory, params) {
+export async function creationCode(readClient, eulerSwapFactory, sParams) {
     let BYTECODE_HEAD = '600b380380600b3d393df3363d3d373d3d3d3d60368038038091363936013d73';
     let BYTECODE_TAIL = '5af43d3d93803e603457fd5bf3';
 
@@ -42,7 +43,7 @@ export async function creationCode(readClient, eulerSwapFactory, params) {
         args: [],
     });
 
-    let encoded = encodeAbiParameters(paramsAbi, [params]);
+    let encoded = encodeAbiParameters(staticParamsAbi, [sParams]);
 
     return '0x' + BYTECODE_HEAD + eulerSwapImpl.substr(2) + BYTECODE_TAIL + encoded.substr(2);
 }
@@ -53,36 +54,36 @@ export async function creationCode(readClient, eulerSwapFactory, params) {
 
 //// Pricing Helpers
 
-export function getCurrentPrice(params, reserve0, reserve1) {
+export function getCurrentPrice(dParams, reserve0, reserve1) {
     let price;
 
-    if (reserve0 <= params.equilibriumReserve0) {
-        if (reserve0 === params.equilibriumReserve0) return params.priceX * c1e18 / params.priceY;
-        price = -df_dx(reserve0, params.priceX, params.priceY, params.equilibriumReserve0, params.concentrationX);
+    if (reserve0 <= dParams.equilibriumReserve0) {
+        if (reserve0 === dParams.equilibriumReserve0) return dParams.priceX * c1e18 / dParams.priceY;
+        price = -df_dx(reserve0, dParams.priceX, dParams.priceY, dParams.equilibriumReserve0, dParams.concentrationX);
     } else {
-        if (reserve1 === params.equilibriumReserve1) return params.priceY * c1e18 / params.priceX;
-        price = -df_dx(reserve1, params.priceY, params.priceX, params.equilibriumReserve1, params.concentrationY);
+        if (reserve1 === dParams.equilibriumReserve1) return dParams.priceY * c1e18 / dParams.priceX;
+        price = -df_dx(reserve1, dParams.priceY, dParams.priceX, dParams.equilibriumReserve1, dParams.concentrationY);
         price = c1e18 * c1e18 / price;
     }
 
     return price;
 }
 
-export function getCurrentPriceRAY(params, reserve0, reserve1) {
+export function getCurrentPriceRAY(dParams, reserve0, reserve1) {
     let price;
 
-    if (reserve0 <= params.equilibriumReserve0) {
-        if (reserve0 === params.equilibriumReserve0) return (params.priceX * c1e27) / params.priceY;
-        price = -df_dx_RAY(reserve0, params.priceX, params.priceY, params.equilibriumReserve0, params.concentrationX);
+    if (reserve0 <= dParams.equilibriumReserve0) {
+        if (reserve0 === dParams.equilibriumReserve0) return (dParams.priceX * c1e27) / dParams.priceY;
+        price = -df_dx_RAY(reserve0, dParams.priceX, dParams.priceY, dParams.equilibriumReserve0, dParams.concentrationX);
     } else {
-        if (reserve1 === params.equilibriumReserve1) return (params.priceY * c1e27) / params.priceX;
-        price = -df_dx_RAY(reserve1, params.priceY, params.priceX, params.equilibriumReserve1, params.concentrationY);
+        if (reserve1 === dParams.equilibriumReserve1) return (dParams.priceY * c1e27) / dParams.priceX;
+        price = -df_dx_RAY(reserve1, dParams.priceY, dParams.priceX, dParams.equilibriumReserve1, dParams.concentrationY);
         price = (c1e27 * c1e27) / price;
     }
     return price;
 }
 
-export function getCurrentReserves(params, currentPrice) {
+export function getCurrentReserves(dParams, currentPrice) {
     const {
         priceX: px,
         priceY: py,
@@ -90,7 +91,7 @@ export function getCurrentReserves(params, currentPrice) {
         equilibriumReserve1: y0,
         concentrationX: cx,
         concentrationY: cy,
-    } = params;
+    } = dParams;
 
     const apexPrice = (px * c1e18) / py;
     if (currentPrice < apexPrice) throw new Error('price is below apex - no curve solution');
@@ -102,7 +103,7 @@ export function getCurrentReserves(params, currentPrice) {
         while (lo <= hi) {
             const mid = (lo + hi) >> 1n;
             const y = f(mid, px, py, x0, y0, cx);
-            const p = getCurrentPrice(params, mid, y);
+            const p = getCurrentPrice(dParams, mid, y);
             if (p === currentPrice) return [mid, y];
             if (p > currentPrice) {
                 lo = mid + 1n;
@@ -118,14 +119,14 @@ export function getCurrentReserves(params, currentPrice) {
         let hi = y0;
         while (true) {
             const xAtHi = f(hi, py, px, y0, x0, cy);
-            const p = getCurrentPrice(params, xAtHi, hi);
+            const p = getCurrentPrice(dParams, xAtHi, hi);
             if (p >= currentPrice) break;
             hi <<= 1n;
         }
         while (lo <= hi) {
             const mid = (lo + hi) >> 1n;
             const x = f(mid, py, px, y0, x0, cy);
-            const p = getCurrentPrice(params, x, mid);
+            const p = getCurrentPrice(dParams, x, mid);
             if (p === currentPrice) return [x, mid];
             if (p < currentPrice) {
                 lo = mid + 1n;
@@ -143,7 +144,7 @@ export function getCurrentReserves(params, currentPrice) {
     throw new Error('no integer reserves produce the supplied price');
 }
 
-export function getCurrentReservesRAY(params, currentPriceRAY) {
+export function getCurrentReservesRAY(dParams, currentPriceRAY) {
     const {
         priceX: px,
         priceY: py,
@@ -151,7 +152,7 @@ export function getCurrentReservesRAY(params, currentPriceRAY) {
         equilibriumReserve1: y0,
         concentrationX: cx,
         concentrationY: cy,
-    } = params;
+    } = dParams;
 
     const apexPriceRAY = (px * c1e27) / py;
     if (currentPriceRAY < apexPriceRAY) throw new Error('price below apex - no curve solution');
@@ -163,7 +164,7 @@ export function getCurrentReservesRAY(params, currentPriceRAY) {
         while (lo <= hi) {
             const mid = (lo + hi) >> 1n;
             const y = f(mid, px, py, x0, y0, cx);
-            const p = getCurrentPriceRAY(params, mid, y);
+            const p = getCurrentPriceRAY(dParams, mid, y);
             if (p === currentPriceRAY) return [mid, y];
             if (p > currentPriceRAY) lo = mid + 1n;
             else hi = mid - 1n;
@@ -176,14 +177,14 @@ export function getCurrentReservesRAY(params, currentPriceRAY) {
         let hi = y0;
         while (true) {
             const xAtHi = f(hi, py, px, y0, x0, cy);
-            const p = getCurrentPriceRAY(params, xAtHi, hi);
+            const p = getCurrentPriceRAY(dParams, xAtHi, hi);
             if (p >= currentPriceRAY) break;
             hi <<= 1n;
         }
         while (lo <= hi) {
             const mid = (lo + hi) >> 1n;
             const x = f(mid, py, px, y0, x0, cy);
-            const p = getCurrentPriceRAY(params, x, mid);
+            const p = getCurrentPriceRAY(dParams, x, mid);
             if (p === currentPriceRAY) return [x, mid];
             if (p < currentPriceRAY) lo = mid + 1n;
             else hi = mid - 1n;
@@ -198,30 +199,30 @@ export function getCurrentReservesRAY(params, currentPriceRAY) {
     throw new Error('no integer reserves produce the supplied RAY price');
 }
 
-export function verifyPoint(params, reserve0, reserve1) {
+export function verifyPoint(dParams, reserve0, reserve1) {
     return verify(
         reserve0,
         reserve1,
-        params.priceX,
-        params.priceY,
-        params.equilibriumReserve0,
-        params.equilibriumReserve1,
-        params.concentrationX,
-        params.concentrationY
+        dParams.priceX,
+        dParams.priceY,
+        dParams.equilibriumReserve0,
+        dParams.equilibriumReserve1,
+        dParams.concentrationX,
+        dParams.concentrationY
     );
 }
 
-export function verifyOnCurveExact(params, x, y) {
-    let v1 = verifyPoint(params, x, y);
-    let v2 = x === 0n || !verifyPoint(params, x - 1n, y);
-    let v3 = y === 0n || !verifyPoint(params, x, y - 1n);
+export function verifyOnCurveExact(dParams, x, y) {
+    let v1 = verifyPoint(dParams, x, y);
+    let v2 = x === 0n || !verifyPoint(dParams, x - 1n, y);
+    let v3 = y === 0n || !verifyPoint(dParams, x, y - 1n);
 
     return (v1 && v2 && v3);
 }
 
-export function tightenToCurve(params, x, y) {
-    if (!verifyPoint(params, x, y)) throw Error('not on or above curve');
-    if (verifyOnCurveExact(params, x, y)) return [x, y];
+export function tightenToCurve(dParams, x, y) {
+    if (!verifyPoint(dParams, x, y)) throw Error('not on or above curve');
+    if (verifyOnCurveExact(dParams, x, y)) return [x, y];
 
     let tighten = (dim) => {
         let val = 1n;
@@ -231,7 +232,7 @@ export function tightenToCurve(params, x, y) {
         while (true) {
             let [tx, ty] = dim ? [x - val, y] : [x, y - val];
 
-            if (verifyPoint(params, tx, ty)) {
+            if (verifyPoint(dParams, tx, ty)) {
                 [x, y] = [tx, ty];
                 val *= 2n;
             } else {
@@ -246,7 +247,7 @@ export function tightenToCurve(params, x, y) {
 
             let [tx, ty] = dim ? [x - val, y] : [x, y - val];
 
-            if (verifyPoint(params, tx, ty)) {
+            if (verifyPoint(dParams, tx, ty)) {
                 [x, y] = [tx, ty];
             } else {
                 if (val === 1n) break;
